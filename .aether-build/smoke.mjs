@@ -47,11 +47,12 @@ const browser = await chromium.launch({
 });
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+const benign = (s) => /favicon|status of 404|\.map\b/i.test(s);
 page.on('console', (msg) => {
   const t = msg.type();
   const text = `[${t}] ${msg.text()}`;
   allLogs.push(text);
-  if (t === 'error') consoleErrors.push(text);
+  if (t === 'error' && !benign(text)) consoleErrors.push(text);
 });
 page.on('pageerror', (err) => pageErrors.push(String(err && err.stack ? err.stack : err)));
 
@@ -90,24 +91,32 @@ try {
     await page.keyboard.up(k);
 
     const shot = join(SHOTS, `frame_${String(i).padStart(2, '0')}.png`);
-    await page.screenshot({ path: shot });
+    const buf = await page.screenshot({ path: shot });
 
-    // Measure non-blackness of the gl canvas via a downscaled readback.
-    const lum = await page.evaluate(() => {
-      const c = document.getElementById('gl');
-      if (!c) return -1;
-      const tmp = document.createElement('canvas');
-      tmp.width = 64; tmp.height = 36;
-      const ctx = tmp.getContext('2d');
-      try { ctx.drawImage(c, 0, 0, 64, 36); } catch { return -2; }
-      const d = ctx.getImageData(0, 0, 64, 36).data;
-      let sum = 0, max = 0;
-      for (let p = 0; p < d.length; p += 4) {
-        const v = (d[p] + d[p + 1] + d[p + 2]) / 3;
-        sum += v; if (v > max) max = v;
+    // Measure brightness of the COMPOSITED screenshot (reliable even with
+    // preserveDrawingBuffer:false). Decode the PNG back inside the page and
+    // sample the scene region, skipping the HUD card in the top-left corner.
+    const b64 = buf.toString('base64');
+    const lum = await page.evaluate(async (data) => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + data;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 72;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      let sum = 0, max = 0, n = 0;
+      for (let y = 0; y < c.height; y++) {
+        for (let x = 0; x < c.width; x++) {
+          if (x < 28 && y < 18) continue; // skip HUD card region
+          const p = (y * c.width + x) * 4;
+          const v = (d[p] + d[p + 1] + d[p + 2]) / 3;
+          sum += v; if (v > max) max = v; n++;
+        }
       }
-      return { avg: +(sum / (d.length / 4)).toFixed(1), max };
-    });
+      return { avg: +(sum / n).toFixed(1), max };
+    }, b64);
     nonBlack.push(lum);
   }
 

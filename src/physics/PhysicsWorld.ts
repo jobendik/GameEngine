@@ -126,7 +126,7 @@ export class PhysicsWorld implements EngineModule {
     this.integrate(dt);
     this.broadphase();
     this.narrowphase();
-    this.solve(dt);
+    this.solve();
     this.updateSleep(dt);
     // Refresh world matrices for every body (renderers read these).
     for (let i = 0; i < this._bodies.length; i++) {
@@ -727,7 +727,7 @@ export class PhysicsWorld implements EngineModule {
 
   // ---- 4. resolution (sequential impulse + positional correction) ---------
 
-  private solve(dt: number): void {
+  private solve(): void {
     const contacts = this.contacts;
     if (contacts.length === 0) return;
 
@@ -750,8 +750,6 @@ export class PhysicsWorld implements EngineModule {
 
     // Positional correction (Baumgarte with slop) — separate pass keeps the
     // velocity solver from fighting position changes.
-    const invDt = dt > 0 ? 1 / dt : 0;
-    void invDt;
     for (let i = 0; i < contacts.length; i++) {
       this.correctPosition(contacts[i]);
     }

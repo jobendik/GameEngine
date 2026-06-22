@@ -23,7 +23,13 @@ void main() {
 export const DEPTH_FRAG = /* glsl */ `#version 300 es
 precision highp float;
 
+// The shadow framebuffer has a color attachment (draw buffer 0), so the
+// fragment stage must declare a matching output or WebGL2 raises
+// "active draw buffers with missing fragment shader outputs" and discards the
+// draw. We only care about the depth texture; this value is unused.
+out vec4 fragColor;
+
 void main() {
-  // Depth is written automatically; no color output is needed.
+  fragColor = vec4(1.0);
 }
 `;

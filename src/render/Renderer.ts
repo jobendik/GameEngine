@@ -198,6 +198,9 @@ export class Renderer implements EngineModule {
   resize(w: number, h: number): void {
     this.width = Math.max(1, w);
     this.height = Math.max(1, h);
+    // Sizes arrive in device pixels (Engine pre-multiplies by dpr), so size the
+    // canvas backbuffer 1:1 — the Renderer owns the GLContext per the contract.
+    this.glx.resize(this.width, this.height, 1);
     this.sceneFBO.resize(this.width, this.height);
     this.ldrFBO.resize(this.width, this.height);
     const bw = Math.max(1, this.width >> 1);
@@ -643,35 +646,35 @@ export class Renderer implements EngineModule {
     this.brightShader.setFloat('uThreshold', r.bloomThreshold);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    // Separable Gaussian: alternate horizontal/vertical between ping & pong.
+    // Separable Gaussian: each iteration blurs `src` horizontally into `ping`,
+    // then `ping` vertically into `pong`, and feeds `pong` back in as the next
+    // source. ping and pong are FIXED targets (never swapped) so a pass never
+    // samples the texture it is currently writing — which would form a
+    // framebuffer/texture feedback loop and discard the draw on WebGL2.
     this.blurShader.use();
+    const ping = this.bloomPing;
+    const pong = this.bloomPong;
     let src = this.bloomBright;
-    let dstPing = this.bloomPing;
-    let dstPong = this.bloomPong;
 
     for (let i = 0; i < BLOOM_ITERATIONS; i++) {
-      // Horizontal -> ping.
-      dstPing.bind();
+      // Horizontal: src -> ping.
+      ping.bind();
       gl.clear(gl.COLOR_BUFFER_BIT);
       this.blurShader.setTexture('uTex', src.colorTextures[0], 0);
       this.blurShader.setVec2('uDirection', 1 / bw, 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-      // Vertical -> pong.
-      dstPong.bind();
+      // Vertical: ping -> pong.
+      pong.bind();
       gl.clear(gl.COLOR_BUFFER_BIT);
-      this.blurShader.setTexture('uTex', dstPing.colorTextures[0], 0);
+      this.blurShader.setTexture('uTex', ping.colorTextures[0], 0);
       this.blurShader.setVec2('uDirection', 0, 1 / bh);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-      src = dstPong;
-      // Swap ping/pong roles for the next iteration.
-      const t = dstPing;
-      dstPing = dstPong;
-      dstPong = t;
+      src = pong;
     }
 
-    return src.colorTextures[0];
+    return pong.colorTextures[0];
   }
 
   private toneMapId(mode: 'aces' | 'reinhard' | 'none'): number {
