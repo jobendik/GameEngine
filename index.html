@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aether Engine — Physics Sandbox</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    #app { position: fixed; inset: 0; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+    #hud {
+      position: fixed; inset: 0; pointer-events: none; color: #cfe3ff;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+    #stats {
+      position: absolute; top: 12px; left: 12px; font-size: 12px; line-height: 1.5;
+      background: rgba(8,12,20,0.55); border: 1px solid rgba(120,160,255,0.18);
+      border-radius: 8px; padding: 10px 12px; backdrop-filter: blur(6px); min-width: 190px;
+    }
+    #stats .title { color: #7fb0ff; font-weight: 700; letter-spacing: 0.12em; margin-bottom: 6px; text-transform: uppercase; font-size: 10px; }
+    #stats .row { display: flex; justify-content: space-between; gap: 16px; }
+    #stats .row span:last-child { color: #ffffff; }
+    #crosshair {
+      position: absolute; left: 50%; top: 50%; width: 10px; height: 10px;
+      transform: translate(-50%, -50%); opacity: 0.0; transition: opacity 0.2s;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ""; position: absolute; background: rgba(220,235,255,0.85);
+    }
+    #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+    #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+    body.locked #crosshair { opacity: 0.9; }
+
+    #help {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; background: rgba(8,12,20,0.55); border: 1px solid rgba(120,160,255,0.18);
+      border-radius: 8px; padding: 8px 14px; backdrop-filter: blur(6px); text-align: center;
+      transition: opacity 0.4s;
+    }
+    body.locked #help { opacity: 0; }
+    #help b { color: #7fb0ff; }
+
+    #overlay {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(20,28,48,0.6), rgba(3,4,8,0.92));
+      pointer-events: auto; cursor: pointer; transition: opacity 0.5s;
+    }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+    #overlay .card {
+      text-align: center; padding: 36px 48px; border-radius: 16px;
+      background: rgba(10,14,24,0.7); border: 1px solid rgba(120,160,255,0.25);
+      box-shadow: 0 20px 80px rgba(0,0,0,0.6);
+    }
+    #overlay h1 { font-size: 34px; letter-spacing: 0.18em; color: #cfe3ff; margin-bottom: 6px; }
+    #overlay h1 span { color: #7fb0ff; }
+    #overlay p { color: #8fa6c8; font-size: 13px; margin-top: 10px; }
+    #overlay .play { margin-top: 22px; color: #fff; font-size: 14px; letter-spacing: 0.1em; }
+    #overlay .play b { color: #9ec5ff; }
+    .spinner { width: 26px; height: 26px; margin: 0 auto 14px; border: 3px solid rgba(120,160,255,0.25); border-top-color: #7fb0ff; border-radius: 50%; animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="gl"></canvas>
+  </div>
+  <div id="hud">
+    <div id="stats"></div>
+    <div id="crosshair"></div>
+    <div id="help">
+      <b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>Space</b> jump &nbsp;·&nbsp; <b>Click</b> launch orb &nbsp;·&nbsp; <b>F</b> flashlight &nbsp;·&nbsp; <b>G</b> gravity gun
+    </div>
+  </div>
+  <div id="overlay">
+    <div class="card">
+      <div class="spinner" id="spinner"></div>
+      <h1>AETHER<span>·</span>ENGINE</h1>
+      <p>WebGL2 · PBR · Real-time shadows · Impulse physics · Spatial audio</p>
+      <div class="play" id="playline">Compiling shaders…</div>
+    </div>
+  </div>
+  <script type="module" src="/demo/main.ts"></script>
+</body>
+</html>

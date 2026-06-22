@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.vite/
+stats.html
+
+# build scratch / harness
+.aether-build/shots/
+.aether-build/*.json
