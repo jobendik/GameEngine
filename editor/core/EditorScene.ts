@@ -5,6 +5,7 @@ import type { Renderer } from '@/render';
 import { PhysicsWorld } from '@/physics';
 import { EditorObject } from './EditorObject';
 import type { EditorDeps } from './EditorObject';
+import { AssetLibrary } from './AssetLibrary';
 import type { AddSpec, EnvironmentData, ObjectJSON, SceneJSON } from './types';
 import { SCENE_VERSION, defaultEnvironment } from './types';
 
@@ -21,6 +22,8 @@ export class EditorScene {
   environment: EnvironmentData = defaultEnvironment();
 
   readonly physics: PhysicsWorld;
+  /** Reusable project assets (scripts/materials/prefabs) shown in the Assets panel. */
+  readonly assets = new AssetLibrary();
   private readonly deps: EditorDeps;
   private readonly renderer: Renderer;
   private nextId = 1;
@@ -31,7 +34,7 @@ export class EditorScene {
   constructor(engine: Engine, renderer: Renderer) {
     this.renderer = renderer;
     this.physics = new PhysicsWorld();
-    this.deps = { world: engine.world, renderer, physics: this.physics };
+    this.deps = { world: engine.world, renderer, physics: this.physics, assets: this.assets };
 
     // Managed sun: a directional Light entity the RenderSystem will pick up.
     this.sun = new Light(LightType.Directional);
@@ -100,11 +103,14 @@ export class EditorScene {
       nextId: this.nextId,
       environment: JSON.parse(JSON.stringify(this.environment)) as EnvironmentData,
       objects: this.objects.map((o) => o.toJSON()),
+      assets: this.assets.serialize(),
     };
   }
 
   deserialize(json: SceneJSON): void {
     this.clear();
+    // Assets first so objects can resolve material/script asset references.
+    this.assets.deserialize(json.assets);
     this.environment = mergeEnvironment(json.environment);
     this.applyEnvironment();
     for (const oj of json.objects) {

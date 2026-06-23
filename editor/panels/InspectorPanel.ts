@@ -1,9 +1,12 @@
 import { MathUtils } from '@/core/math';
 import { LightType } from '@/render';
+import type { Material } from '@/render';
 import { BodyType } from '@/physics';
 import type { EditorContext } from '@editor/core';
 import type { EditorObject } from '@editor/core';
-import type { LightKind, BodyKind, ScriptData } from '@editor/core';
+import type {
+  LightKind, BodyKind, ScriptData, SelectedAsset, ScriptAsset, MaterialAsset, PrefabAsset,
+} from '@editor/core';
 import { BUILTIN_BEHAVIORS, getBehaviorDef } from '@editor/script';
 import type { ParamSpec } from '@editor/script';
 import { el, clear, button } from '@editor/ui/dom';
@@ -39,12 +42,15 @@ export class InspectorPanel {
     const events = ctx.events;
     // Structural changes rebuild the whole body.
     events.on('selection', () => this.rebuild());
+    events.on('assetSelection', () => this.rebuild());
+    events.on('inspector', () => this.rebuild());
     events.on('hierarchy', () => this.rebuild());
     events.on('mode', () => this.rebuild());
     // Value-only changes just re-read the model into the existing inputs.
     events.on('transform', () => this.refresh());
     events.on('props', () => this.refresh());
     events.on('environment', () => this.refresh());
+    events.on('assets', () => this.refresh());
 
     this.rebuild();
   }
@@ -60,8 +66,8 @@ export class InspectorPanel {
   private rebuild(): void {
     clear(this.body);
     this.fields = [];
-    const sel = this.ctx.selection;
-    if (sel) this.buildForObject(sel);
+    if (this.ctx.selectedAsset) this.buildForAsset(this.ctx.selectedAsset);
+    else if (this.ctx.selection) this.buildForObject(this.ctx.selection);
     else this.buildForEnvironment();
     this.refresh();
   }
@@ -103,24 +109,53 @@ export class InspectorPanel {
   }
 
   private buildMaterialGroup(obj: EditorObject): void {
-    const ctx = this.ctx;
     const m = obj.material!;
-    this.group('Material', [
-      this.add(colorField('Albedo',
-        () => [m.albedo.r, m.albedo.g, m.albedo.b],
-        (c) => { m.albedo.set(c[0], c[1], c[2], 1); ctx.notifyProps(obj); })),
-      this.add(sliderField('Metallic', () => m.metallic,
-        (v) => { m.metallic = v; ctx.notifyProps(obj); })),
-      this.add(sliderField('Roughness', () => m.roughness,
-        (v) => { m.roughness = v; ctx.notifyProps(obj); })),
-      this.add(colorField('Emissive',
-        () => [m.emissive.r, m.emissive.g, m.emissive.b],
-        (c) => { m.emissive.set(c[0], c[1], c[2], 1); ctx.notifyProps(obj); })),
-      this.add(numberField('Emissive Int', () => m.emissiveIntensity,
-        (v) => { m.emissiveIntensity = Math.max(0, v); ctx.notifyProps(obj); })),
-      this.add(sliderField('Opacity', () => m.opacity,
-        (v) => { m.opacity = v; m.transparent = v < 1; ctx.notifyProps(obj); })),
-    ]);
+    const onChange = (): void => this.ctx.notifyProps(obj);
+    const nodes: HTMLElement[] = [this.materialLinkRow(obj)];
+    for (const f of this.materialFields(m, onChange)) nodes.push(this.add(f).row);
+    const title = obj.materialAssetId !== undefined ? 'Material (shared)' : 'Material';
+    this.groupEl(title, nodes);
+  }
+
+  /** Field set editing a Material; reused for objects and material assets. */
+  private materialFields(m: Material, onChange: () => void): Field[] {
+    return [
+      colorField('Albedo', () => [m.albedo.r, m.albedo.g, m.albedo.b],
+        (c) => { m.albedo.set(c[0], c[1], c[2], 1); onChange(); }),
+      sliderField('Metallic', () => m.metallic, (v) => { m.metallic = v; onChange(); }),
+      sliderField('Roughness', () => m.roughness, (v) => { m.roughness = v; onChange(); }),
+      colorField('Emissive', () => [m.emissive.r, m.emissive.g, m.emissive.b],
+        (c) => { m.emissive.set(c[0], c[1], c[2], 1); onChange(); }),
+      numberField('Emissive Int', () => m.emissiveIntensity,
+        (v) => { m.emissiveIntensity = Math.max(0, v); onChange(); }),
+      sliderField('Opacity', () => m.opacity,
+        (v) => { m.opacity = v; m.transparent = v < 1; onChange(); }),
+    ];
+  }
+
+  /** Row showing the linked Material asset (with Unlink) or an assign picker. */
+  private materialLinkRow(obj: EditorObject): HTMLElement {
+    const ctx = this.ctx;
+    if (obj.materialAssetId !== undefined) {
+      const asset = ctx.assets.findMaterial(obj.materialAssetId);
+      const unlink = button('Unlink', () => { obj.unlinkMaterialAsset(); ctx.refreshInspector(); }, 'del');
+      return el('div', { class: 'field' }, [
+        el('label', { text: 'Asset' }),
+        el('div', { class: 'row-inline' }, [
+          el('span', { class: 'linked-name', text: asset?.name ?? '(missing)' }), unlink,
+        ]),
+      ]);
+    }
+    const select = el('select') as HTMLSelectElement;
+    select.append(el('option', { text: '(inline material)', attrs: { value: '' } }));
+    for (const a of ctx.assets.materials) {
+      select.append(el('option', { text: a.name, attrs: { value: String(a.id) } }));
+    }
+    select.addEventListener('change', () => {
+      const a = ctx.assets.findMaterial(parseInt(select.value, 10));
+      if (a) ctx.assignMaterialAsset(a, obj);
+    });
+    return el('div', { class: 'field' }, [el('label', { text: 'Asset' }), select]);
   }
 
   private buildLightGroup(obj: EditorObject): void {
@@ -189,20 +224,25 @@ export class InspectorPanel {
 
     obj.scripts.forEach((sd, idx) => body.append(this.buildScriptBlock(obj, sd, idx)));
 
-    // "Add Script" dropdown: built-in behaviors + Custom Code.
+    // "Add" dropdown: built-in behaviors, Custom Code, and Script assets (by ref).
     const select = el('select') as HTMLSelectElement;
     select.append(el('option', { text: '+ Add behavior…', attrs: { value: '' } }));
     for (const def of BUILTIN_BEHAVIORS) {
       select.append(el('option', { text: def.label, attrs: { value: def.type } }));
     }
     select.append(el('option', { text: 'Custom Code', attrs: { value: 'custom' } }));
+    for (const a of this.ctx.assets.scripts) {
+      select.append(el('option', { text: `◆ ${a.name} (asset)`, attrs: { value: `asset:${a.id}` } }));
+    }
     select.addEventListener('change', () => {
-      const type = select.value;
-      if (!type) return;
-      const sd: ScriptData = type === 'custom'
-        ? { type: 'custom', code: CUSTOM_TEMPLATE }
-        : { type, params: {} };
-      obj.scripts.push(sd);
+      const v = select.value;
+      if (!v) return;
+      if (v.startsWith('asset:')) {
+        const a = this.ctx.assets.findScript(parseInt(v.slice(6), 10));
+        if (a) this.ctx.attachScriptAsset(a, obj);
+        return;
+      }
+      obj.scripts.push(v === 'custom' ? { type: 'custom', code: CUSTOM_TEMPLATE } : { type: v, params: {} });
       this.rebuild();
     });
     body.append(el('div', { class: 'field' }, [el('label', { text: 'Add' }), select]));
@@ -211,39 +251,110 @@ export class InspectorPanel {
     this.body.append(el('div', { class: 'group' }, [head, body]));
   }
 
-  /** One attached script: a header (label + remove) and its params or code. */
+  /** One attached script: a header (label + remove) and its params, code, or asset ref. */
   private buildScriptBlock(obj: EditorObject, sd: ScriptData, idx: number): HTMLElement {
-    const def = sd.type === 'custom' ? null : getBehaviorDef(sd.type);
-    const title = sd.type === 'custom' ? 'Custom Code' : def?.label ?? sd.type;
-
     const remove = button('×', () => { obj.scripts.splice(idx, 1); this.rebuild(); }, 'del');
     remove.title = 'Remove script';
-    const header = el('div', { class: 'script-head' }, [el('span', { text: title }), remove]);
 
+    // Asset reference — show the asset name + an Edit link; not editable inline.
+    if (sd.assetId !== undefined) {
+      const asset = this.ctx.assets.findScript(sd.assetId);
+      const header = el('div', { class: 'script-head' }, [
+        el('span', { text: `◆ ${asset?.name ?? '(missing asset)'}` }), remove,
+      ]);
+      const block = el('div', { class: 'script-block' }, [header]);
+      if (asset) {
+        block.append(button('Edit asset', () => this.ctx.selectAsset({ type: 'script', asset }), ''));
+      }
+      return block;
+    }
+
+    const def = sd.type === 'custom' ? null : getBehaviorDef(sd.type);
+    const title = sd.type === 'custom' ? 'Custom Code' : def?.label ?? sd.type;
+    const header = el('div', { class: 'script-head' }, [el('span', { text: title }), remove]);
     const block = el('div', { class: 'script-block' }, [header]);
 
     if (sd.type === 'custom') {
-      const ta = el('textarea', {
-        attrs: {
-          rows: '7', spellcheck: 'false',
-          style: 'width:100%;background:#1a1c22;color:#c7cedb;border:1px solid #424857;'
-            + 'border-radius:4px;padding:6px;font-family:ui-monospace,monospace;font-size:11px;resize:vertical;',
-        },
-      }) as HTMLTextAreaElement;
-      ta.value = sd.code ?? '';
-      ta.addEventListener('input', () => { sd.code = ta.value; });
-      block.append(ta);
+      block.append(this.codeTextarea(() => sd.code ?? '', (v) => { sd.code = v; }));
     } else if (def) {
       const params: ParamBag = (sd.params ??= {});
-      if (def.description) {
-        block.append(el('div', { class: 'script-desc', text: def.description }));
-      }
-      for (const spec of def.params) {
-        const f = this.add(this.paramField(spec, params));
-        block.append(f.row);
-      }
+      if (def.description) block.append(el('div', { class: 'script-desc', text: def.description }));
+      for (const spec of def.params) block.append(this.add(this.paramField(spec, params)).row);
     }
     return block;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Asset inspector (when an asset is selected)
+  // ---------------------------------------------------------------------------
+
+  private buildForAsset(sel: SelectedAsset): void {
+    this.group('Asset', [
+      this.add(textField('Name', () => sel.asset.name, (v) => this.ctx.renameAsset(sel, v))),
+    ]);
+    if (sel.type === 'material') this.buildMaterialAssetEditor(sel.asset);
+    else if (sel.type === 'script') this.buildScriptAssetEditor(sel.asset);
+    else this.buildPrefabAssetEditor(sel.asset);
+  }
+
+  private buildMaterialAssetEditor(asset: MaterialAsset): void {
+    // Editing the shared material updates every object using it (no notify needed).
+    const nodes = this.materialFields(asset.material, () => {}).map((f) => this.add(f).row);
+    this.groupEl('Material', nodes);
+  }
+
+  private buildScriptAssetEditor(asset: ScriptAsset): void {
+    const sd = asset.script;
+    const nodes: HTMLElement[] = [];
+    const typeSel = el('select') as HTMLSelectElement;
+    typeSel.append(el('option', { text: 'Custom Code', attrs: { value: 'custom' } }));
+    for (const b of BUILTIN_BEHAVIORS) typeSel.append(el('option', { text: b.label, attrs: { value: b.type } }));
+    typeSel.value = sd.type;
+    typeSel.addEventListener('change', () => {
+      sd.type = typeSel.value;
+      if (sd.type !== 'custom') sd.params = sd.params ?? {};
+      this.ctx.refreshInspector();
+    });
+    nodes.push(el('div', { class: 'field' }, [el('label', { text: 'Type' }), typeSel]));
+
+    if (sd.type === 'custom') {
+      nodes.push(this.codeTextarea(() => sd.code ?? '', (v) => { sd.code = v; }));
+    } else {
+      const def = getBehaviorDef(sd.type);
+      if (def) {
+        const params: ParamBag = (sd.params ??= {});
+        if (def.description) nodes.push(el('div', { class: 'script-desc', text: def.description }));
+        for (const spec of def.params) nodes.push(this.add(this.paramField(spec, params)).row);
+      }
+    }
+    this.groupEl('Script', nodes);
+  }
+
+  private buildPrefabAssetEditor(asset: PrefabAsset): void {
+    this.groupEl('Prefab', [
+      el('div', { class: 'script-desc', text: `Template of "${asset.object.name}". Instantiate to add a copy.` }),
+      button('Instantiate into scene', () => this.ctx.instantiatePrefab(asset), 'primary'),
+    ]);
+  }
+
+  /** Append a group whose body is arbitrary nodes (not just Field rows). */
+  private groupEl(title: string, nodes: HTMLElement[]): void {
+    const head = el('div', { class: 'group-head', text: title });
+    this.body.append(el('div', { class: 'group' }, [head, el('div', { class: 'group-body' }, nodes)]));
+  }
+
+  /** A dark monospace code editor bound to get/set. */
+  private codeTextarea(get: () => string, set: (v: string) => void): HTMLTextAreaElement {
+    const ta = el('textarea', {
+      attrs: {
+        rows: '7', spellcheck: 'false',
+        style: 'width:100%;background:#1a1c22;color:#c7cedb;border:1px solid #424857;'
+          + 'border-radius:4px;padding:6px;font-family:ui-monospace,monospace;font-size:11px;resize:vertical;',
+      },
+    }) as HTMLTextAreaElement;
+    ta.value = get();
+    ta.addEventListener('input', () => set(ta.value));
+    return ta;
   }
 
   /** Build the right inspector field for a behavior parameter spec. */

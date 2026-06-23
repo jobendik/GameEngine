@@ -8,6 +8,7 @@ import { Viewport } from '@editor/viewport';
 import { HierarchyPanel } from '@editor/panels/HierarchyPanel';
 import { InspectorPanel } from '@editor/panels/InspectorPanel';
 import { Toolbar } from '@editor/panels/Toolbar';
+import { AssetPanel } from '@editor/panels/AssetPanel';
 
 /**
  * Aether Editor bootstrap. Spins up the engine + renderer into the viewport
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
   new Toolbar(ctx);
   new HierarchyPanel(ctx);
   new InspectorPanel(ctx);
+  new AssetPanel(ctx);
   new Viewport(ctx);
 
   // Seed: restore the last autosave, otherwise load the sample scene.

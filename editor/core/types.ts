@@ -54,6 +54,8 @@ export interface ScriptData {
   params?: Record<string, number | boolean | string | number[]>;
   /** For type === 'custom': the JS body run every frame. */
   code?: string;
+  /** If set, this entry references a Script asset; type/params/code come from it. */
+  assetId?: number;
 }
 
 export interface ObjectJSON {
@@ -62,9 +64,26 @@ export interface ObjectJSON {
   transform: TransformData;
   primitive?: PrimitiveKind; // present => the object has a mesh + material
   material?: MaterialData;
+  /** If set, the object shares a Material asset instead of an inline material. */
+  materialAssetId?: number;
   light?: LightData;
   body?: BodyData;
   scripts?: ScriptData[];
+}
+
+// ---- Assets (reusable project resources, shown in the Assets panel) ----
+
+export type AssetType = 'script' | 'material' | 'prefab';
+
+export interface ScriptAssetJSON { id: number; name: string; script: ScriptData; }
+export interface MaterialAssetJSON { id: number; name: string; material: MaterialData; }
+export interface PrefabAssetJSON { id: number; name: string; object: ObjectJSON; }
+
+export interface AssetsJSON {
+  nextId: number;
+  scripts: ScriptAssetJSON[];
+  materials: MaterialAssetJSON[];
+  prefabs: PrefabAssetJSON[];
 }
 
 export interface EnvironmentData {
@@ -85,6 +104,7 @@ export interface SceneJSON {
   nextId: number;
   environment: EnvironmentData;
   objects: ObjectJSON[];
+  assets?: AssetsJSON;
 }
 
 /** Request to create a new object. */

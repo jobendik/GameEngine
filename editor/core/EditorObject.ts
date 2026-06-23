@@ -1,4 +1,4 @@
-import { Vec3, Color, MathUtils } from '@/core/math';
+import { Vec3, MathUtils } from '@/core/math';
 import type { World, Entity } from '@/core/ecs';
 import { Material, Light, LightType, Primitives } from '@/render';
 import type { Renderer, Mesh } from '@/render';
@@ -6,8 +6,10 @@ import type { GeometryData } from '@/render';
 import { PhysicsWorld, RigidBody, BodyType } from '@/physics';
 import type { ColliderShape } from '@/physics';
 import { Transform, MeshRenderer } from '@/scene';
+import { materialFromData, materialToData } from './materialIO';
+import type { AssetLibrary, MaterialAsset } from './AssetLibrary';
 import type {
-  AddSpec, ObjectJSON, PrimitiveKind, LightKind, BodyKind, MaterialData, LightData, ScriptData,
+  AddSpec, ObjectJSON, PrimitiveKind, LightKind, BodyKind, LightData, ScriptData,
 } from './types';
 import { defaultMaterial, defaultLight } from './types';
 
@@ -16,6 +18,7 @@ export interface EditorDeps {
   world: World;
   renderer: Renderer;
   physics: PhysicsWorld;
+  assets: AssetLibrary;
 }
 
 const D2R = MathUtils.DEG2RAD;
@@ -41,6 +44,9 @@ export class EditorObject {
 
   /** Attached script/behavior components (run in play mode). */
   scripts: ScriptData[] = [];
+
+  /** If set, this object shares a Material asset (its `material` is the asset's). */
+  materialAssetId?: number;
 
   primitive?: PrimitiveKind;
   meshRenderer?: MeshRenderer;
@@ -107,6 +113,11 @@ export class EditorObject {
       }
     }
     obj.scripts = json.scripts ? (JSON.parse(JSON.stringify(json.scripts)) as ScriptData[]) : [];
+    // Link a shared material asset if referenced (assets are deserialized first).
+    if (json.primitive && json.materialAssetId !== undefined) {
+      const asset = deps.assets.findMaterial(json.materialAssetId);
+      if (asset) obj.linkMaterialAsset(asset);
+    }
     obj.applyTransform();
     return obj;
   }
@@ -165,6 +176,23 @@ export class EditorObject {
     if (!this.body) return;
     this.deps.physics.removeBody(this.body);
     this.body = undefined;
+  }
+
+  /** Share a Material asset: this object renders with the asset's live material. */
+  linkMaterialAsset(asset: MaterialAsset): void {
+    if (!this.meshRenderer) return;
+    this.materialAssetId = asset.id;
+    this.material = asset.material;
+    this.meshRenderer.material = asset.material;
+  }
+
+  /** Stop sharing: clone the current material into an independent copy. */
+  unlinkMaterialAsset(): void {
+    if (!this.meshRenderer || this.materialAssetId === undefined || !this.material) return;
+    const indep = materialFromData(materialToData(this.material));
+    this.material = indep;
+    this.meshRenderer.material = indep;
+    this.materialAssetId = undefined;
   }
 
   /** Switch an existing body between static/dynamic. */
@@ -259,16 +287,13 @@ export class EditorObject {
       },
     };
     if (this.primitive && this.material) {
-      const m = this.material;
       json.primitive = this.primitive;
-      json.material = {
-        albedo: [m.albedo.r, m.albedo.g, m.albedo.b],
-        metallic: m.metallic,
-        roughness: m.roughness,
-        emissive: [m.emissive.r, m.emissive.g, m.emissive.b],
-        emissiveIntensity: m.emissiveIntensity,
-        opacity: m.opacity,
-      };
+      // A linked material asset is referenced by id; an inline one is embedded.
+      if (this.materialAssetId !== undefined) {
+        json.materialAssetId = this.materialAssetId;
+      } else {
+        json.material = materialToData(this.material);
+      }
     }
     if (this.light) {
       json.light = {
@@ -316,18 +341,6 @@ function buildGeometry(kind: PrimitiveKind): GeometryData {
     case 'capsule': return Primitives.capsule(0.4, 0.6, 24);
     case 'torus': return Primitives.torus(0.5, 0.18, 48, 24);
   }
-}
-
-function materialFromData(m: MaterialData): Material {
-  return new Material({
-    albedo: new Color(m.albedo[0], m.albedo[1], m.albedo[2]),
-    metallic: m.metallic,
-    roughness: m.roughness,
-    emissive: new Color(m.emissive[0], m.emissive[1], m.emissive[2]),
-    emissiveIntensity: m.emissiveIntensity,
-    opacity: m.opacity,
-    transparent: m.opacity < 1,
-  });
 }
 
 function lightFromData(l: LightData): Light {

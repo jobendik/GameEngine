@@ -5,10 +5,23 @@ import { Input } from '@/input';
 import { ScriptRuntime } from '@editor/script';
 import { EditorScene } from './EditorScene';
 import type { EditorObject } from './EditorObject';
+import { ScriptAsset, MaterialAsset, PrefabAsset } from './AssetLibrary';
+import { materialToData } from './materialIO';
 import type { AddSpec, EditorMode, GizmoMode, SceneJSON } from './types';
-import { defaultEnvironment } from './types';
+import { defaultEnvironment, defaultMaterial } from './types';
+
+const SCRIPT_ASSET_TEMPLATE =
+  `// Reusable script asset — attach it to objects from the Assets panel.\n` +
+  `// In scope: dt, time, input, transform, body, object, state, scene, camera, Vec3, Quat, MathUtils\n` +
+  `transform.position.y += Math.sin(time.elapsed * 3) * dt;\n`;
 
 const STORAGE_KEY = 'aether.editor.scene';
+
+/** The currently-selected asset (shown in the inspector), tagged by type. */
+export type SelectedAsset =
+  | { type: 'script'; asset: ScriptAsset }
+  | { type: 'material'; asset: MaterialAsset }
+  | { type: 'prefab'; asset: PrefabAsset };
 
 /**
  * The editor hub. Owns the engine/renderer/camera/scene and the editor event
@@ -27,6 +40,7 @@ export class EditorContext {
   readonly input: Input;
 
   selection: EditorObject | null = null;
+  selectedAsset: SelectedAsset | null = null;
   mode: EditorMode = 'edit';
   gizmoMode: GizmoMode = 'translate';
 
@@ -78,9 +92,33 @@ export class EditorContext {
   // Selection & editing commands
   // ---------------------------------------------------------------------------
 
+  /** Convenience accessor for the project asset library. */
+  get assets() {
+    return this.scene.assets;
+  }
+
   select(obj: EditorObject | null): void {
     this.selection = obj;
+    if (obj && this.selectedAsset) {
+      this.selectedAsset = null;
+      this.events.emit('assetSelection', null);
+    }
     this.events.emit('selection', obj);
+  }
+
+  /** Select an asset to edit it in the inspector (clears object selection). */
+  selectAsset(sel: SelectedAsset | null): void {
+    this.selectedAsset = sel;
+    if (sel && this.selection) {
+      this.selection = null;
+      this.events.emit('selection', null);
+    }
+    this.events.emit('assetSelection', sel);
+  }
+
+  /** Force the inspector to rebuild (after a structural change it can't detect). */
+  refreshInspector(): void {
+    this.events.emit('inspector');
   }
 
   add(spec: AddSpec): EditorObject {
@@ -175,9 +213,12 @@ export class EditorContext {
 
   newScene(): void {
     this.scene.clear();
+    this.scene.assets.clear();
     this.scene.environment = defaultEnvironment();
     this.scene.applyEnvironment();
+    this.selectedAsset = null;
     this.select(null);
+    this.events.emit('assets');
     this.events.emit('hierarchy');
     this.events.emit('environment');
     this.status('New scene');
@@ -210,9 +251,96 @@ export class EditorContext {
 
   importSceneJSON(json: SceneJSON): void {
     this.scene.deserialize(json);
+    this.selectedAsset = null;
     this.select(null);
+    this.events.emit('assets');
+    this.events.emit('assetSelection', null);
     this.events.emit('hierarchy');
     this.events.emit('environment');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Asset library commands
+  // ---------------------------------------------------------------------------
+
+  createScriptAsset(): ScriptAsset {
+    const name = `Script ${this.assets.scripts.length + 1}`;
+    const asset = this.assets.createScript(name, { type: 'custom', code: SCRIPT_ASSET_TEMPLATE });
+    this.events.emit('assets');
+    this.selectAsset({ type: 'script', asset });
+    this.status(`Created ${name}`, 'ok');
+    return asset;
+  }
+
+  createMaterialAsset(): MaterialAsset {
+    const name = `Material ${this.assets.materials.length + 1}`;
+    const seed = this.selection?.material ? materialToData(this.selection.material) : defaultMaterial();
+    const asset = this.assets.createMaterial(name, seed);
+    this.events.emit('assets');
+    this.selectAsset({ type: 'material', asset });
+    this.status(`Created ${name}`, 'ok');
+    return asset;
+  }
+
+  createPrefabFromSelection(): PrefabAsset | null {
+    if (!this.selection) {
+      this.status('Select an object to save as a prefab', 'warn');
+      return null;
+    }
+    const asset = this.assets.createPrefab(this.selection.name, this.selection.toJSON());
+    this.events.emit('assets');
+    this.status(`Saved prefab "${asset.name}"`, 'ok');
+    return asset;
+  }
+
+  instantiatePrefab(asset: PrefabAsset): EditorObject {
+    const obj = this.scene.addFromJSON(asset.object);
+    this.events.emit('hierarchy');
+    this.select(obj);
+    this.status(`Instantiated "${asset.name}"`, 'ok');
+    return obj;
+  }
+
+  deleteAsset(sel: SelectedAsset): void {
+    if (sel.type === 'material') {
+      for (const o of this.scene.objects) {
+        if (o.materialAssetId === sel.asset.id) o.unlinkMaterialAsset();
+      }
+      this.assets.removeMaterial(sel.asset);
+    } else if (sel.type === 'script') {
+      for (const o of this.scene.objects) {
+        o.scripts = o.scripts.filter((s) => s.assetId !== sel.asset.id);
+      }
+      this.assets.removeScript(sel.asset);
+    } else {
+      this.assets.removePrefab(sel.asset);
+    }
+    if (this.selectedAsset?.asset === sel.asset) this.selectAsset(null);
+    this.events.emit('assets');
+    this.status('Deleted asset');
+  }
+
+  /** Attach a Script asset reference to an object (default: the selection). */
+  attachScriptAsset(asset: ScriptAsset, target?: EditorObject): void {
+    const obj = target ?? this.selection;
+    if (!obj) { this.status('Select an object first', 'warn'); return; }
+    obj.scripts.push({ type: asset.script.type, assetId: asset.id });
+    this.refreshInspector();
+    this.status(`Attached "${asset.name}" to ${obj.name}`, 'ok');
+  }
+
+  /** Link a Material asset to an object (default: the selection). */
+  assignMaterialAsset(asset: MaterialAsset, target?: EditorObject): void {
+    const obj = target ?? this.selection;
+    if (!obj || !obj.meshRenderer) { this.status('Select a mesh object first', 'warn'); return; }
+    obj.linkMaterialAsset(asset);
+    this.refreshInspector();
+    this.status(`Assigned "${asset.name}" to ${obj.name}`, 'ok');
+  }
+
+  renameAsset(sel: SelectedAsset, name: string): void {
+    sel.asset.name = name.trim() || sel.asset.name;
+    this.events.emit('assets');
   }
 
   downloadScene(): void {
@@ -229,17 +357,20 @@ export class EditorContext {
 
   loadSample(): void {
     this.scene.clear();
+    this.scene.assets.clear();
     this.scene.environment = defaultEnvironment();
     this.scene.environment.fogDensity = 0.01;
     this.scene.applyEnvironment();
     this.buildSample();
+    this.selectedAsset = null;
     this.select(null);
+    this.events.emit('assets');
     this.events.emit('hierarchy');
     this.events.emit('environment');
     this.status('Loaded sample scene', 'ok');
   }
 
-  /** A small physics-ready scene: floor, a stack, some balls and lights. */
+  /** A small physics-ready scene + a few assets to populate the Assets panel. */
   private buildSample(): void {
     const ground = this.scene.add({ kind: 'mesh', primitive: 'plane', name: 'Ground', position: [0, 0, 0], withBody: true, bodyKind: 'static' });
     ground.transform.scale.set(24, 1, 24);
@@ -247,13 +378,25 @@ export class EditorContext {
     if (ground.material) ground.material.roughness = 0.85;
     ground.refreshBody();
 
-    // A stack of crates.
-    const brown: [number, number, number] = [0.45, 0.32, 0.18];
+    // A stack of crates that all SHARE one "Wood" material asset.
+    const wood = this.assets.createMaterial('Wood', {
+      albedo: [0.45, 0.32, 0.18], metallic: 0, roughness: 0.82, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1,
+    });
     for (let i = 0; i < 4; i++) {
       const c = this.scene.add({ kind: 'mesh', primitive: 'box', name: `Crate ${i + 1}`, position: [0, 0.5 + i * 1.02, 0], withBody: true, bodyKind: 'dynamic' });
-      c.material?.albedo.set(brown[0], brown[1], brown[2], 1);
-      if (c.material) c.material.roughness = 0.8;
+      c.linkMaterialAsset(wood);
     }
+
+    // A spinning coin: a "Gold" material asset + a "Fast Spinner" script asset.
+    const gold = this.assets.createMaterial('Gold', {
+      albedo: [1.0, 0.78, 0.34], metallic: 1, roughness: 0.25, emissive: [0, 0, 0], emissiveIntensity: 1, opacity: 1,
+    });
+    const spinner = this.assets.createScript('Fast Spinner', { type: 'spin', params: { speed: 160, axis: [0, 1, 0] } });
+    const coin = this.scene.add({ kind: 'mesh', primitive: 'cylinder', name: 'Coin', position: [-4.5, 1.4, -3] });
+    coin.transform.scale.set(1.3, 0.16, 1.3);
+    coin.applyTransform();
+    coin.linkMaterialAsset(gold);
+    coin.scripts = [{ type: spinner.script.type, assetId: spinner.id }];
 
     // A couple of metal balls to drop.
     const ball1 = this.scene.add({ kind: 'mesh', primitive: 'sphere', name: 'Steel Ball', position: [-2.5, 4, 1.5], withBody: true, bodyKind: 'dynamic' });

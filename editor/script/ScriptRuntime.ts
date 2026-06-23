@@ -48,9 +48,10 @@ export class ScriptRuntime {
       if (!obj.scripts) continue;
       for (const sd of obj.scripts) {
         if (sd.enabled === false) continue;
-        const behavior = this.build(sd);
+        const resolved = this.resolve(sd); // follow asset references
+        const behavior = this.build(resolved);
         if (!behavior) continue;
-        this.instances.push({ behavior, ctx: this.makeContext(obj, sd), dead: false });
+        this.instances.push({ behavior, ctx: this.makeContext(obj, resolved), dead: false });
       }
     }
     this.running = true;
@@ -76,6 +77,15 @@ export class ScriptRuntime {
   }
 
   // ---- internals ----
+
+  /** Follow an asset reference to its concrete script data (or return as-is). */
+  private resolve(sd: ScriptData): ScriptData {
+    if (sd.assetId !== undefined) {
+      const asset = this.deps.scene.assets.findScript(sd.assetId);
+      if (asset) return asset.script;
+    }
+    return sd;
+  }
 
   private build(sd: ScriptData): Behavior | null {
     if (sd.type === 'custom') {

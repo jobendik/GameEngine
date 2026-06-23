@@ -23,6 +23,7 @@
       --radius: 6px;
       --h-toolbar: 46px;
       --h-status: 26px;
+      --h-assets: 178px;
       --w-left: 240px;
       --w-right: 312px;
     }
@@ -46,8 +47,12 @@
 
     #app { display: grid; width: 100%; height: 100%;
       grid-template-columns: var(--w-left) 1fr var(--w-right);
-      grid-template-rows: var(--h-toolbar) 1fr var(--h-status);
-      grid-template-areas: "toolbar toolbar toolbar" "hierarchy viewport inspector" "status status status"; }
+      grid-template-rows: var(--h-toolbar) 1fr var(--h-assets) var(--h-status);
+      grid-template-areas:
+        "toolbar toolbar toolbar"
+        "hierarchy viewport inspector"
+        "assets assets assets"
+        "status status status"; }
 
     #toolbar { grid-area: toolbar; display: flex; align-items: center; gap: 6px; padding: 0 10px;
       background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
@@ -109,6 +114,26 @@
     .script-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; color: var(--accent); }
     .script-head .del { opacity: 0.8; }
     .script-desc { color: var(--text-dim); font-size: 10px; line-height: 1.35; }
+    .linked-name { color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Assets dock */
+    #assets { grid-area: assets; background: var(--panel); border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+    #assets .assets-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); flex: none; }
+    #assets .assets-head .title { font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; color: var(--text-dim); margin-right: 4px; }
+    #assets .assets-head .spacer { flex: 1; }
+    #assets .tab { padding: 4px 10px; }
+    #assets .tab.active { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+    #assets .assets-grid { flex: 1; overflow: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; align-content: flex-start; }
+    .asset-card { width: 98px; height: 82px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--panel-2);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; cursor: pointer; position: relative; padding: 6px; }
+    .asset-card:hover { border-color: #515870; }
+    .asset-card.selected { border-color: var(--accent); background: var(--accent-dim); }
+    .asset-card .ico { font-size: 24px; line-height: 1; }
+    .asset-card .nm { font-size: 10px; color: var(--text); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .asset-card .use { position: absolute; left: 5px; bottom: 3px; font-size: 14px; color: var(--green); line-height: 1; }
+    .asset-card .del { position: absolute; right: 4px; top: 2px; opacity: 0; color: var(--text-dim); padding: 0 4px; }
+    .asset-card:hover .del { opacity: 1; }
+    .assets-empty { color: var(--text-dim); padding: 16px; }
     .name-input { font-weight: 700; }
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-thumb { background: #3a404c; border-radius: 5px; border: 2px solid var(--panel); }
@@ -131,6 +156,7 @@
     <aside id="inspector">
       <div class="panel-head">Inspector</div>
     </aside>
+    <section id="assets"></section>
     <footer id="status"></footer>
   </div>
   <script type="module" src="/editor/main.ts"></script>

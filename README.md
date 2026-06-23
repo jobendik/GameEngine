@@ -27,10 +27,12 @@ Open the app and you get a full visual scene editor:
   **Scene environment** (ambient, sun, fog, exposure, bloom).
 - **Toolbar** — add primitives (cube, sphere, plane, cylinder, capsule, torus) and lights
   (directional/point/spot), switch gizmo mode, and **▶ Play / ■ Stop**.
+- **Assets** (bottom dock) — a project library of reusable resources you create once and use
+  across the scene: **Script assets**, **Material assets**, and **Prefabs**.
 - **Play-in-editor** — hit Play and the physics simulation runs live; Stop restores the exact
   pre-play scene (snapshot/restore).
-- **Save / Load / Export** — scenes persist to browser storage (with autosave) and export to a
-  portable JSON file. **Sample** loads a ready-made physics scene to poke at.
+- **Save / Load / Export** — scenes (and their assets) persist to browser storage (with
+  autosave) and export to a portable JSON file. **Sample** loads a ready-made scene to poke at.
 
 Everything is driven by a small command hub (`EditorContext`) and a typed event bus, so panels
 stay in sync without any framework.
@@ -73,6 +75,22 @@ state.t = (state.t || 0) + dt;                                  // persist acros
 In code, you can also define behaviors as classes against the same `ScriptContext` API
 (`editor/script/types.ts`) and register them in `editor/script/behaviors.ts` to make them
 appear in the Add-behavior menu.
+
+### Assets — reusable resources
+
+The **Assets** dock holds project resources you author once and reuse:
+
+- **Script assets** — a named custom-code or preset behavior. Attach it to many objects (by
+  reference) from the inspector's Scripts → Add menu, or the card's `+`. Edit the asset once and
+  every object using it updates.
+- **Material assets** — a **shared** material. Assign it to objects (inspector Material → Asset,
+  or the card's `+`); recoloring the asset recolors every object that uses it, live. Unlink to
+  give an object its own independent copy.
+- **Prefabs** — select an object and **Save Prefab** to capture it as a template, then
+  **Instantiate** copies into the scene.
+
+Click an asset card to edit it in the inspector; `×` deletes it (objects relink/clean up safely).
+Assets serialize with the scene, so they survive save/load and export.
 
 ---
 
@@ -151,10 +169,10 @@ src/                 # THE ENGINE (runtime, zero deps)
   render/ gl/ shaders/ Renderer.ts Camera Light Material Mesh Primitives
   physics/  input/  audio/  particles/  anim/  scene/
 editor/              # THE EDITOR (built on the engine)
-  core/    EditorContext (command hub), EditorScene, EditorObject, types
+  core/    EditorContext (command hub), EditorScene, EditorObject, AssetLibrary, types
   ui/      dom + field-builder helpers (no framework)
   viewport/Viewport (orbit camera, grid, picking) + Gizmo (translate/rotate/scale)
-  panels/  Toolbar, HierarchyPanel, InspectorPanel
+  panels/  Toolbar, HierarchyPanel, InspectorPanel, AssetPanel
   script/  ScriptRuntime + built-in behaviors + custom-code (play-mode logic)
   main.ts  bootstrap
 demo/                # the standalone first-person physics sandbox (sandbox.html)
