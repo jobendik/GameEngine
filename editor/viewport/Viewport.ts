@@ -40,7 +40,9 @@ export class Viewport {
   private readonly pivot = new Vec3(0, 2, 0);
   private distance = 14;
   private yaw = -Math.PI * 0.25;
-  private pitch = 0.5;
+  // Negative pitch puts the camera ABOVE the pivot looking down (with the
+  // `pivot - dir*distance` convention below, sin(pitch) drives camera height).
+  private pitch = -0.5;
 
   // ---- Pointer/drag bookkeeping ----
   private activeButton = -1; // 0=LMB,1=MMB,2=RMB while a drag is live
@@ -96,7 +98,10 @@ export class Viewport {
   /** LMB drag: orbit yaw/pitch (pitch clamped to avoid gimbal flip at the poles). */
   private orbit(dx: number, dy: number): void {
     this.yaw -= dx * ORBIT_SPEED;
-    this.pitch -= dy * ORBIT_SPEED;
+    // Drag down → camera lowers toward the horizon (pitch toward 0/positive);
+    // drag up → camera rises overhead (pitch more negative). Feels natural with
+    // the above-looking-down default.
+    this.pitch += dy * ORBIT_SPEED;
     this.pitch = clamp(this.pitch, -HALF_PI_CLAMP, HALF_PI_CLAMP);
     this.updateCamera();
   }
