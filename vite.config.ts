@@ -6,6 +6,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
+      '@editor': resolve(__dirname, 'editor'),
     },
   },
   server: {
@@ -19,6 +20,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        sandbox: resolve(__dirname, 'sandbox.html'),
       },
     },
   },

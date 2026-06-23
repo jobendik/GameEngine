@@ -4,85 +4,131 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:," />
-  <title>Aether Engine — Physics Sandbox</title>
+  <title>Aether Editor</title>
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: dark;
+      --bg: #1b1d23;
+      --panel: #23262e;
+      --panel-2: #2b2f39;
+      --line: #353a45;
+      --line-2: #424857;
+      --text: #c7cedb;
+      --text-dim: #8c93a3;
+      --accent: #4ea1ff;
+      --accent-dim: #2d6fbf;
+      --danger: #ff6b6b;
+      --green: #57d27f;
+      --warn: #ffb454;
+      --radius: 6px;
+      --h-toolbar: 46px;
+      --h-status: 26px;
+      --w-left: 240px;
+      --w-right: 312px;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-    #app { position: fixed; inset: 0; }
-    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+      font: 12px/1.4 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+    button { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line-2);
+      border-radius: var(--radius); padding: 5px 10px; cursor: pointer; user-select: none; }
+    button:hover { background: #333845; border-color: #515870; }
+    button:active { background: #2a2e38; }
+    button.active { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+    button.primary { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: var(--accent); }
+    button.danger:hover { background: #5a2a2a; border-color: var(--danger); color: #ffd9d9; }
+    input, select { font: inherit; color: var(--text); background: #1a1c22; border: 1px solid var(--line-2);
+      border-radius: 4px; padding: 3px 6px; outline: none; width: 100%; }
+    input:focus, select:focus { border-color: var(--accent); }
+    input[type=range] { padding: 0; }
+    input[type=color] { padding: 0; height: 24px; cursor: pointer; }
+    input[type=checkbox] { width: auto; }
 
-    #hud {
-      position: fixed; inset: 0; pointer-events: none; color: #cfe3ff;
-      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-    }
-    #stats {
-      position: absolute; top: 12px; left: 12px; font-size: 12px; line-height: 1.5;
-      background: rgba(8,12,20,0.55); border: 1px solid rgba(120,160,255,0.18);
-      border-radius: 8px; padding: 10px 12px; backdrop-filter: blur(6px); min-width: 190px;
-    }
-    #stats .title { color: #7fb0ff; font-weight: 700; letter-spacing: 0.12em; margin-bottom: 6px; text-transform: uppercase; font-size: 10px; }
-    #stats .row { display: flex; justify-content: space-between; gap: 16px; }
-    #stats .row span:last-child { color: #ffffff; }
-    #crosshair {
-      position: absolute; left: 50%; top: 50%; width: 10px; height: 10px;
-      transform: translate(-50%, -50%); opacity: 0.0; transition: opacity 0.2s;
-    }
-    #crosshair::before, #crosshair::after {
-      content: ""; position: absolute; background: rgba(220,235,255,0.85);
-    }
-    #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
-    #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
-    body.locked #crosshair { opacity: 0.9; }
+    #app { display: grid; width: 100%; height: 100%;
+      grid-template-columns: var(--w-left) 1fr var(--w-right);
+      grid-template-rows: var(--h-toolbar) 1fr var(--h-status);
+      grid-template-areas: "toolbar toolbar toolbar" "hierarchy viewport inspector" "status status status"; }
 
-    #help {
-      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-      font-size: 12px; background: rgba(8,12,20,0.55); border: 1px solid rgba(120,160,255,0.18);
-      border-radius: 8px; padding: 8px 14px; backdrop-filter: blur(6px); text-align: center;
-      transition: opacity 0.4s;
-    }
-    body.locked #help { opacity: 0; }
-    #help b { color: #7fb0ff; }
+    #toolbar { grid-area: toolbar; display: flex; align-items: center; gap: 6px; padding: 0 10px;
+      background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+    #toolbar .brand { font-weight: 800; letter-spacing: 0.14em; color: var(--text); margin-right: 6px; white-space: nowrap; }
+    #toolbar .brand b { color: var(--accent); }
+    #toolbar .sep { width: 1px; height: 22px; background: var(--line-2); margin: 0 4px; flex: none; }
+    #toolbar .spacer { flex: 1; }
+    #toolbar button { white-space: nowrap; }
 
-    #overlay {
-      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-      background: radial-gradient(ellipse at center, rgba(20,28,48,0.6), rgba(3,4,8,0.92));
-      pointer-events: auto; cursor: pointer; transition: opacity 0.5s;
-    }
-    #overlay.hidden { opacity: 0; pointer-events: none; }
-    #overlay .card {
-      text-align: center; padding: 36px 48px; border-radius: 16px;
-      background: rgba(10,14,24,0.7); border: 1px solid rgba(120,160,255,0.25);
-      box-shadow: 0 20px 80px rgba(0,0,0,0.6);
-    }
-    #overlay h1 { font-size: 34px; letter-spacing: 0.18em; color: #cfe3ff; margin-bottom: 6px; }
-    #overlay h1 span { color: #7fb0ff; }
-    #overlay p { color: #8fa6c8; font-size: 13px; margin-top: 10px; }
-    #overlay .play { margin-top: 22px; color: #fff; font-size: 14px; letter-spacing: 0.1em; }
-    #overlay .play b { color: #9ec5ff; }
-    .spinner { width: 26px; height: 26px; margin: 0 auto 14px; border: 3px solid rgba(120,160,255,0.25); border-top-color: #7fb0ff; border-radius: 50%; animation: spin 0.9s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    #hierarchy { grid-area: hierarchy; background: var(--panel); border-right: 1px solid var(--line);
+      display: flex; flex-direction: column; min-height: 0; }
+    #inspector { grid-area: inspector; background: var(--panel); border-left: 1px solid var(--line);
+      display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+    .panel-head { padding: 8px 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+      font-size: 10px; color: var(--text-dim); border-bottom: 1px solid var(--line); flex: none; }
+
+    #viewport { grid-area: viewport; position: relative; background: #0d0f13; min-width: 0; min-height: 0; }
+    #gl { display: block; width: 100%; height: 100%; }
+    #viewport .vp-overlay { position: absolute; inset: 0; pointer-events: none; }
+    #viewport .vp-hint { position: absolute; left: 10px; bottom: 8px; color: var(--text-dim); font-size: 11px;
+      background: rgba(13,15,19,0.6); padding: 4px 8px; border-radius: 4px; }
+    #viewport .vp-mode { position: absolute; right: 10px; top: 8px; color: var(--warn); font-weight: 700;
+      letter-spacing: 0.1em; font-size: 11px; }
+    #viewport.play-mode { outline: 2px solid var(--green); outline-offset: -2px; }
+
+    #status { grid-area: status; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+      background: var(--panel-2); border-top: 1px solid var(--line); color: var(--text-dim); font-size: 11px; }
+    #status .ok { color: var(--green); } #status .accent { color: var(--accent); }
+
+    /* hierarchy tree */
+    .tree { flex: 1; overflow-y: auto; padding: 4px; }
+    .tree .row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+    .tree .row:hover { background: var(--panel-2); }
+    .tree .row.selected { background: var(--accent-dim); color: #fff; }
+    .tree .row .ico { width: 14px; text-align: center; opacity: 0.85; }
+    .tree .row .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tree .row .del { opacity: 0; color: var(--text-dim); padding: 0 4px; }
+    .tree .row:hover .del { opacity: 1; }
+    .tree .empty { color: var(--text-dim); padding: 12px; text-align: center; }
+
+    /* inspector groups & fields */
+    .insp-empty { color: var(--text-dim); padding: 16px; text-align: center; }
+    .group { border-bottom: 1px solid var(--line); }
+    .group > .group-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; cursor: default;
+      font-weight: 700; font-size: 11px; color: var(--text); background: var(--panel-2); }
+    .group > .group-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; }
+    .field { display: grid; grid-template-columns: 78px 1fr; align-items: center; gap: 8px; }
+    .field > label { color: var(--text-dim); font-size: 11px; }
+    .vec3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+    .vec3 .axis { position: relative; }
+    .vec3 .axis input { padding-left: 16px; }
+    .vec3 .axis::before { content: attr(data-axis); position: absolute; left: 5px; top: 50%; transform: translateY(-50%);
+      font-size: 9px; font-weight: 700; }
+    .vec3 .axis.x::before { color: #ff6b6b; } .vec3 .axis.y::before { color: #57d27f; } .vec3 .axis.z::before { color: #4ea1ff; }
+    .field .slider { display: grid; grid-template-columns: 1fr 40px; gap: 6px; align-items: center; }
+    .field .slider .val { color: var(--text); font-size: 11px; text-align: right; }
+    .row-inline { display: flex; gap: 6px; align-items: center; }
+    .name-input { font-weight: 700; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: #3a404c; border-radius: 5px; border: 2px solid var(--panel); }
+    ::-webkit-scrollbar-track { background: transparent; }
   </style>
 </head>
 <body>
   <div id="app">
-    <canvas id="gl"></canvas>
+    <div id="toolbar"></div>
+    <aside id="hierarchy">
+      <div class="panel-head">Hierarchy</div>
+    </aside>
+    <main id="viewport">
+      <canvas id="gl"></canvas>
+      <div class="vp-overlay">
+        <div class="vp-mode" id="vpMode"></div>
+        <div class="vp-hint">LMB orbit · RMB/MMB pan · Wheel zoom · Click to select · <b>W</b>/<b>E</b>/<b>R</b> gizmo · <b>Del</b> delete</div>
+      </div>
+    </main>
+    <aside id="inspector">
+      <div class="panel-head">Inspector</div>
+    </aside>
+    <footer id="status"></footer>
   </div>
-  <div id="hud">
-    <div id="stats"></div>
-    <div id="crosshair"></div>
-    <div id="help">
-      <b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>Space</b> jump &nbsp;·&nbsp; <b>Click</b> launch orb &nbsp;·&nbsp; <b>F</b> flashlight &nbsp;·&nbsp; <b>G</b> gravity gun
-    </div>
-  </div>
-  <div id="overlay">
-    <div class="card">
-      <div class="spinner" id="spinner"></div>
-      <h1>AETHER<span>·</span>ENGINE</h1>
-      <p>WebGL2 · PBR · Real-time shadows · Impulse physics · Spatial audio</p>
-      <div class="play" id="playline">Compiling shaders…</div>
-    </div>
-  </div>
-  <script type="module" src="/demo/main.ts"></script>
+  <script type="module" src="/editor/main.ts"></script>
 </body>
 </html>

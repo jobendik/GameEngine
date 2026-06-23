@@ -18,9 +18,10 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@editor/*": ["editor/*"]
     }
   },
-  "include": ["src", "demo"],
+  "include": ["src", "demo", "editor"],
   "exclude": ["node_modules", "dist"]
 }
