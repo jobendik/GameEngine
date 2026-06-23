@@ -9,6 +9,8 @@ WebGL2 — **zero runtime dependencies**. Aether is two things:
 2. **The Engine** — the runtime underneath: a physically-based renderer, a data-oriented ECS,
    an impulse-based 3D physics solver, spatial audio, particles, and input.
 
+**▶ Live editor: https://jobendik.github.io/GameEngine/** &nbsp;·&nbsp; **Physics sandbox demo: https://jobendik.github.io/GameEngine/sandbox.html**
+
 ![Aether Editor](docs/aether-editor.png)
 
 ---
