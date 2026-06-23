@@ -7,7 +7,7 @@ import { PhysicsWorld, RigidBody, BodyType } from '@/physics';
 import type { ColliderShape } from '@/physics';
 import { Transform, MeshRenderer } from '@/scene';
 import type {
-  AddSpec, ObjectJSON, PrimitiveKind, LightKind, BodyKind, MaterialData, LightData,
+  AddSpec, ObjectJSON, PrimitiveKind, LightKind, BodyKind, MaterialData, LightData, ScriptData,
 } from './types';
 import { defaultMaterial, defaultLight } from './types';
 
@@ -38,6 +38,9 @@ export class EditorObject {
 
   /** Euler rotation in DEGREES — the editable source of truth (avoids quat↔euler drift). */
   rotationEuler: [number, number, number] = [0, 0, 0];
+
+  /** Attached script/behavior components (run in play mode). */
+  scripts: ScriptData[] = [];
 
   primitive?: PrimitiveKind;
   meshRenderer?: MeshRenderer;
@@ -103,6 +106,7 @@ export class EditorObject {
         obj.body.computeMassProperties();
       }
     }
+    obj.scripts = json.scripts ? (JSON.parse(JSON.stringify(json.scripts)) as ScriptData[]) : [];
     obj.applyTransform();
     return obj;
   }
@@ -284,6 +288,9 @@ export class EditorObject {
         restitution: this.body.restitution,
         friction: this.body.friction,
       };
+    }
+    if (this.scripts.length > 0) {
+      json.scripts = JSON.parse(JSON.stringify(this.scripts)) as ScriptData[];
     }
     return json;
   }

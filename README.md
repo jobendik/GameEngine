@@ -47,6 +47,33 @@ stay in sync without any framework.
 | `W` / `E` / `R` | Translate / rotate / scale gizmo |
 | `Del` | Delete selection |
 
+### Scripting — writing game logic
+
+Scenes become *games* by attaching **behaviors** to objects. Select an object → the
+Inspector's **Scripts** group → **Add behavior** → pick a built-in or **Custom Code**. Scripts
+run their lifecycle (`onStart` / `onUpdate` / `onFixedUpdate` / `onStop`) in **Play mode** with
+access to the object's transform, physics body, input, time, and camera. Stop restores the
+pre-play scene, and scripts serialize with the scene.
+
+**Built-in behaviors** (each with inspector-tweakable params): Spin, Hover/Bob, Orbit, Patrol,
+Look-At-Camera (billboard), WASD Move, Jump, Pulse Emissive. Behaviors that move an object use
+its rigid body when it has one (velocity / kinematic), otherwise the transform — so the same
+behavior works on physics and non-physics objects.
+
+**Custom Code** lets you write logic directly. The body runs every frame with these in scope:
+
+```js
+// dt, time, input, transform, body, object, state, scene, camera, Vec3, Quat, MathUtils
+transform.position.y = 1 + Math.sin(time.elapsed * 3) * 0.5;   // bob
+if (input.isDown('KeyW') && body) body.linearVelocity.z = -6;  // drive forward
+if (input.wasPressed('Space') && body) body.linearVelocity.y = 7; // jump
+state.t = (state.t || 0) + dt;                                  // persist across frames
+```
+
+In code, you can also define behaviors as classes against the same `ScriptContext` API
+(`editor/script/types.ts`) and register them in `editor/script/behaviors.ts` to make them
+appear in the Add-behavior menu.
+
 ---
 
 ## The Engine
@@ -128,6 +155,7 @@ editor/              # THE EDITOR (built on the engine)
   ui/      dom + field-builder helpers (no framework)
   viewport/Viewport (orbit camera, grid, picking) + Gizmo (translate/rotate/scale)
   panels/  Toolbar, HierarchyPanel, InspectorPanel
+  script/  ScriptRuntime + built-in behaviors + custom-code (play-mode logic)
   main.ts  bootstrap
 demo/                # the standalone first-person physics sandbox (sandbox.html)
 ```

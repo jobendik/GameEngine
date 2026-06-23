@@ -1,6 +1,8 @@
 import { EventBus } from '@/core';
 import type { Engine, EngineModule } from '@/core';
 import type { Renderer, Camera } from '@/render';
+import { Input } from '@/input';
+import { ScriptRuntime } from '@editor/script';
 import { EditorScene } from './EditorScene';
 import type { EditorObject } from './EditorObject';
 import type { AddSpec, EditorMode, GizmoMode, SceneJSON } from './types';
@@ -21,6 +23,8 @@ export class EditorContext {
   readonly canvas: HTMLCanvasElement;
   readonly scene: EditorScene;
   readonly events = new EventBus();
+  /** Keyboard/mouse input available to scripts in play mode. */
+  readonly input: Input;
 
   selection: EditorObject | null = null;
   mode: EditorMode = 'edit';
@@ -28,6 +32,7 @@ export class EditorContext {
 
   private playSnapshot: SceneJSON | null = null;
   private statusEl: HTMLElement | null = null;
+  private readonly scripts: ScriptRuntime;
 
   constructor(engine: Engine, renderer: Renderer, camera: Camera) {
     this.engine = engine;
@@ -36,12 +41,30 @@ export class EditorContext {
     this.canvas = engine.canvas;
     this.scene = new EditorScene(engine, renderer);
 
-    // Internal simulation module: steps physics + syncs bodies→transforms, but
-    // only while in play mode. Registered so it runs inside the engine loop.
+    // Input is registered first so its edge detection runs before scripts read it.
+    this.input = new Input(engine.canvas);
+    engine.use(this.input);
+
+    this.scripts = new ScriptRuntime({
+      input: this.input,
+      time: engine.time,
+      camera,
+      scene: this.scene,
+      status: (m, k) => this.status(m, k),
+    });
+
+    // Internal simulation module: in PLAY mode it advances scripts + physics and
+    // syncs bodies→transforms. In edit mode it does nothing, so the scene is
+    // static and freely editable.
     const sim: EngineModule = {
       name: 'editor-sim',
+      update: (dt: number) => {
+        if (this.mode === 'play') this.scripts.update(dt);
+      },
       fixedUpdate: (dt: number) => {
-        if (this.mode === 'play') this.scene.physics.fixedUpdate(dt);
+        if (this.mode !== 'play') return;
+        this.scene.physics.fixedUpdate(dt);
+        this.scripts.fixedUpdate(dt);
       },
       lateUpdate: () => {
         if (this.mode !== 'play') return;
@@ -122,12 +145,14 @@ export class EditorContext {
     // Bodies start from their current placement at rest.
     for (const o of this.scene.objects) if (o.body) o.syncTransformToBody();
     this.mode = 'play';
+    this.scripts.start(); // instantiate behaviors + fire onStart
     this.events.emit('mode', this.mode);
-    this.status('Playing — physics running', 'ok');
+    this.status('Playing — physics + scripts running', 'ok');
   }
 
   exitPlay(): void {
     if (this.mode !== 'play') return;
+    this.scripts.stop(); // fire onStop on the live objects before restoring
     this.mode = 'edit';
     if (this.playSnapshot) {
       this.scene.deserialize(this.playSnapshot);
@@ -247,6 +272,11 @@ export class EditorContext {
     ring.transform.scale.set(2.2, 2.2, 2.2);
     ring.rotationEuler = [80, 0, 0];
     ring.applyTransform();
+    // Scripts make it a "game" object: it spins and pulses in play mode.
+    ring.scripts = [
+      { type: 'spin', params: { speed: 70, axis: [1, 0, 0] } },
+      { type: 'pulse', params: { min: 1.4, max: 3.2, speed: 2.2 } },
+    ];
 
     // A warm point light.
     const lamp = this.scene.add({ kind: 'light', lightKind: 'point', name: 'Lamp', position: [3, 4, 3] });

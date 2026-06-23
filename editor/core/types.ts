@@ -44,6 +44,18 @@ export interface BodyData {
   friction: number;
 }
 
+/** A serialized script/behavior attached to an object. */
+export interface ScriptData {
+  /** Behavior type id (e.g. 'spin', 'hover', 'wasd') or 'custom' for free code. */
+  type: string;
+  /** Whether this script runs in play mode. Default true. */
+  enabled?: boolean;
+  /** Tunable parameter values for a built-in behavior, keyed by param. */
+  params?: Record<string, number | boolean | string | number[]>;
+  /** For type === 'custom': the JS body run every frame. */
+  code?: string;
+}
+
 export interface ObjectJSON {
   id: number;
   name: string;
@@ -52,6 +64,7 @@ export interface ObjectJSON {
   material?: MaterialData;
   light?: LightData;
   body?: BodyData;
+  scripts?: ScriptData[];
 }
 
 export interface EnvironmentData {

@@ -3,12 +3,16 @@ import { LightType } from '@/render';
 import { BodyType } from '@/physics';
 import type { EditorContext } from '@editor/core';
 import type { EditorObject } from '@editor/core';
-import type { LightKind, BodyKind } from '@editor/core';
-import { el, clear } from '@editor/ui/dom';
+import type { LightKind, BodyKind, ScriptData } from '@editor/core';
+import { BUILTIN_BEHAVIORS, getBehaviorDef } from '@editor/script';
+import type { ParamSpec } from '@editor/script';
+import { el, clear, button } from '@editor/ui/dom';
 import {
   numberField, sliderField, colorField, checkboxField, selectField, textField, vec3Field,
 } from '@editor/ui/fields';
 import type { Field } from '@editor/ui/fields';
+
+type ParamBag = Record<string, number | boolean | string | number[]>;
 
 /**
  * The right-hand Inspector. When an object is selected it shows the relevant
@@ -72,6 +76,7 @@ export class InspectorPanel {
     if (obj.material) this.buildMaterialGroup(obj);
     if (obj.light) this.buildLightGroup(obj);
     this.buildPhysicsGroup(obj);
+    this.buildScriptsGroup(obj);
   }
 
   private buildObjectGroup(obj: EditorObject): void {
@@ -176,6 +181,94 @@ export class InspectorPanel {
   }
 
   // ---------------------------------------------------------------------------
+  // Scripts / behaviors
+  // ---------------------------------------------------------------------------
+
+  private buildScriptsGroup(obj: EditorObject): void {
+    const body = el('div', { class: 'group-body' });
+
+    obj.scripts.forEach((sd, idx) => body.append(this.buildScriptBlock(obj, sd, idx)));
+
+    // "Add Script" dropdown: built-in behaviors + Custom Code.
+    const select = el('select') as HTMLSelectElement;
+    select.append(el('option', { text: '+ Add behavior…', attrs: { value: '' } }));
+    for (const def of BUILTIN_BEHAVIORS) {
+      select.append(el('option', { text: def.label, attrs: { value: def.type } }));
+    }
+    select.append(el('option', { text: 'Custom Code', attrs: { value: 'custom' } }));
+    select.addEventListener('change', () => {
+      const type = select.value;
+      if (!type) return;
+      const sd: ScriptData = type === 'custom'
+        ? { type: 'custom', code: CUSTOM_TEMPLATE }
+        : { type, params: {} };
+      obj.scripts.push(sd);
+      this.rebuild();
+    });
+    body.append(el('div', { class: 'field' }, [el('label', { text: 'Add' }), select]));
+
+    const head = el('div', { class: 'group-head', text: 'Scripts' });
+    this.body.append(el('div', { class: 'group' }, [head, body]));
+  }
+
+  /** One attached script: a header (label + remove) and its params or code. */
+  private buildScriptBlock(obj: EditorObject, sd: ScriptData, idx: number): HTMLElement {
+    const def = sd.type === 'custom' ? null : getBehaviorDef(sd.type);
+    const title = sd.type === 'custom' ? 'Custom Code' : def?.label ?? sd.type;
+
+    const remove = button('×', () => { obj.scripts.splice(idx, 1); this.rebuild(); }, 'del');
+    remove.title = 'Remove script';
+    const header = el('div', { class: 'script-head' }, [el('span', { text: title }), remove]);
+
+    const block = el('div', { class: 'script-block' }, [header]);
+
+    if (sd.type === 'custom') {
+      const ta = el('textarea', {
+        attrs: {
+          rows: '7', spellcheck: 'false',
+          style: 'width:100%;background:#1a1c22;color:#c7cedb;border:1px solid #424857;'
+            + 'border-radius:4px;padding:6px;font-family:ui-monospace,monospace;font-size:11px;resize:vertical;',
+        },
+      }) as HTMLTextAreaElement;
+      ta.value = sd.code ?? '';
+      ta.addEventListener('input', () => { sd.code = ta.value; });
+      block.append(ta);
+    } else if (def) {
+      const params: ParamBag = (sd.params ??= {});
+      if (def.description) {
+        block.append(el('div', { class: 'script-desc', text: def.description }));
+      }
+      for (const spec of def.params) {
+        const f = this.add(this.paramField(spec, params));
+        block.append(f.row);
+      }
+    }
+    return block;
+  }
+
+  /** Build the right inspector field for a behavior parameter spec. */
+  private paramField(spec: ParamSpec, params: ParamBag): Field {
+    const get = (): number | boolean | string | number[] =>
+      params[spec.key] !== undefined ? params[spec.key] : spec.default;
+    switch (spec.type) {
+      case 'number':
+        return numberField(spec.label, () => numOf(get(), spec.default as number),
+          (v) => { params[spec.key] = v; }, spec.step ?? 0.1);
+      case 'boolean':
+        return checkboxField(spec.label, () => Boolean(get()), (v) => { params[spec.key] = v; });
+      case 'string':
+      case 'key':
+        return textField(spec.label, () => String(get()), (v) => { params[spec.key] = v; });
+      case 'vec3':
+        return vec3Field(spec.label, () => vecOf(get(), spec.default as number[]),
+          (v) => { params[spec.key] = v; });
+      case 'color':
+        return colorField(spec.label, () => vecOf(get(), spec.default as number[]),
+          (v) => { params[spec.key] = v; });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Environment inspector (no selection)
   // ---------------------------------------------------------------------------
 
@@ -240,3 +333,18 @@ function lightKindOf(type: LightType): LightKind {
 function bodyKindOf(type: BodyType): BodyKind {
   return type === BodyType.Static ? 'static' : 'dynamic';
 }
+
+function numOf(v: number | boolean | string | number[], d: number): number {
+  return typeof v === 'number' ? v : d;
+}
+
+function vecOf(v: number | boolean | string | number[], d: number[]): [number, number, number] {
+  return Array.isArray(v) ? [v[0], v[1], v[2]] : [d[0], d[1], d[2]];
+}
+
+const CUSTOM_TEMPLATE =
+  `// Runs every frame in play mode. In scope:\n` +
+  `//   dt, time, input, transform, body, object, state, scene, camera,\n` +
+  `//   Vec3, Quat, MathUtils\n` +
+  `// Example:\n` +
+  `transform.position.y = 1 + Math.sin(time.elapsed * 3) * 0.5;\n`;
